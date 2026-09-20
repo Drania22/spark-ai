@@ -33,14 +33,7 @@
         }
       ],
       "expo-font",
-      "expo-web-browser",
-      [
-        "expo-speech-recognition",
-        {
-          "microphonePermission": "Spark necesita el micrófono para dictar mensajes.",
-          "speechRecognitionPermission": "Spark usa el reconocimiento de voz para convertir tu voz en texto."
-        }
-      ]
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

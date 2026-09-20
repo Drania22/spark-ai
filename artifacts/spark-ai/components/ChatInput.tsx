@@ -14,7 +14,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
-import { VoiceButton } from "@/components/VoiceButton";
 
 interface ChatInputProps {
   onSend: (text: string, images?: string[]) => void;
@@ -40,11 +39,6 @@ export function ChatInput({
     onSend(trimmed, images.length > 0 ? images : undefined);
     setText("");
     setImages([]);
-  };
-
-  const handleVoiceTranscript = (transcript: string) => {
-    setText((prev) => (prev ? `${prev} ${transcript}` : transcript));
-    inputRef.current?.focus();
   };
 
   const handlePickImage = async () => {
@@ -132,11 +126,6 @@ export function ChatInput({
           blurOnSubmit={false}
           returnKeyType="send"
         />
-
-        {/* Voice button */}
-        {Platform.OS !== "web" && !canSend && (
-          <VoiceButton onTranscript={handleVoiceTranscript} disabled={disabled} />
-        )}
 
         {/* Send button */}
         {canSend && (

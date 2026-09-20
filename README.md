@@ -6,7 +6,6 @@ Asistente de IA personal construido con Expo + Claude + Clerk Auth.
 - 🔐 Google Sign-In (Clerk)
 - ⚡ Spark 3.5 Flash (Claude Haiku 4.5) & 🧠 Spark 3.1 Pro (Claude Sonnet 5)
 - 📡 Spark Offline (sin internet)
-- 🎙️ Entrada de voz (reconocimiento nativo del dispositivo)
 - 📎 Adjuntar imágenes
 - 💬 Historial de conversaciones
 
