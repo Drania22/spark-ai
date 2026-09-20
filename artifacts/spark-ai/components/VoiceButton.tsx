@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useAuth } from "@clerk/expo";
 import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
 import React, { useRef, useState } from "react";
@@ -24,6 +25,7 @@ interface VoiceButtonProps {
 
 export function VoiceButton({ onTranscript, disabled }: VoiceButtonProps) {
   const colors = useColors();
+  const { getToken } = useAuth();
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -89,8 +91,10 @@ export function VoiceButton({ onTranscript, disabled }: VoiceButtonProps) {
         name: "recording.m4a",
       } as any);
 
+      const token = await getToken();
       const response = await fetch(`${API_BASE}/transcribe`, {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
 
