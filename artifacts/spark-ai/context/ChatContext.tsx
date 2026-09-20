@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { fetch } from "expo/fetch";
+import { useAuth } from "@clerk/expo";
 import { getOfflineResponse } from "@/utils/offlineAI";
 
 export type MessageRole = "user" | "assistant";
@@ -31,14 +32,14 @@ export interface Conversation {
 
 export const MODELS = [
   {
-    id: "gemini-2.5-flash",
+    id: "claude-haiku-4-5-20251001",
     label: "Spark 3.5 Flash",
     sublabel: "Respuestas rápidas e inteligentes",
     icon: "⚡",
     offline: false,
   },
   {
-    id: "gemini-2.5-pro",
+    id: "claude-sonnet-5",
     label: "Spark 3.1 Pro",
     sublabel: "Razonamiento avanzado y profundo",
     icon: "🧠",
@@ -53,7 +54,7 @@ export const MODELS = [
   },
 ];
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 const STORAGE_KEY = "spark_conversations_v2";
 const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
@@ -75,13 +76,14 @@ interface ChatContextType {
   createConversation: () => string;
   selectConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, images?: string[]) => Promise<void>;
   clearActiveConversation: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
+  const { getToken } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -250,9 +252,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           );
         }
 
+        const token = await getToken();
         const response = await fetch(`${API_BASE}/chat/stream`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ message: text, history, model: selectedModel, images: imageData }),
         });
 
@@ -335,7 +341,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [activeConversationId, conversations, selectedModel, saveConversations]
+    [activeConversationId, conversations, selectedModel, saveConversations, getToken]
   );
 
   return (

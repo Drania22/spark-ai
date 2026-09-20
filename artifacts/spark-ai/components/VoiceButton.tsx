@@ -1,21 +1,13 @@
 import { Feather } from "@expo/vector-icons";
-import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
-import React, { useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Animated,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+import React, { useRef, useState } from "react";
+import { Animated, Pressable, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
-
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
-  : "/api";
 
 interface VoiceButtonProps {
   onTranscript: (text: string) => void;
@@ -25,8 +17,7 @@ interface VoiceButtonProps {
 export function VoiceButton({ onTranscript, disabled }: VoiceButtonProps) {
   const colors = useColors();
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const transcriptRef = useRef("");
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -45,97 +36,68 @@ export function VoiceButton({ onTranscript, disabled }: VoiceButtonProps) {
     Animated.timing(pulseAnim, { toValue: 1, duration: 150, useNativeDriver: true }).start();
   };
 
+  useSpeechRecognitionEvent("start", () => {
+    setIsRecording(true);
+    startPulse();
+  });
+
+  useSpeechRecognitionEvent("result", (event) => {
+    transcriptRef.current = event.results[0]?.transcript ?? "";
+  });
+
+  useSpeechRecognitionEvent("error", (event) => {
+    console.error("Speech recognition error:", event.error, event.message);
+  });
+
+  // "end" se dispara al detener manualmente o cuando el motor detecta silencio.
+  useSpeechRecognitionEvent("end", () => {
+    stopPulse();
+    setIsRecording(false);
+    const text = transcriptRef.current.trim();
+    transcriptRef.current = "";
+    if (text) {
+      onTranscript(text);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  });
+
   const startRecording = async () => {
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!granted) return;
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
-      setIsRecording(true);
+      transcriptRef.current = "";
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      startPulse();
-    } catch (err) {
-      console.error("Error starting recording:", err);
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!recordingRef.current) return;
-    try {
-      stopPulse();
-      setIsRecording(false);
-      setIsTranscribing(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
-
-      if (!uri) return;
-
-      // Send audio to transcription API
-      const formData = new FormData();
-      formData.append("audio", {
-        uri,
-        type: "audio/m4a",
-        name: "recording.m4a",
-      } as any);
-
-      const response = await fetch(`${API_BASE}/transcribe`, {
-        method: "POST",
-        body: formData,
+      ExpoSpeechRecognitionModule.start({
+        lang: "es-ES",
+        interimResults: true,
+        continuous: false,
       });
-
-      if (response.ok) {
-        const { text } = await response.json();
-        if (text?.trim()) {
-          onTranscript(text.trim());
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-      }
     } catch (err) {
-      console.error("Transcription error:", err);
-    } finally {
-      setIsTranscribing(false);
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      console.error("Error starting speech recognition:", err);
     }
   };
 
   const handlePress = () => {
     if (disabled) return;
     if (isRecording) {
-      stopRecording();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      ExpoSpeechRecognitionModule.stop();
     } else {
       startRecording();
     }
   };
 
-  const color = isRecording ? "#EA4335" : isTranscribing ? colors.primary : colors.mutedForeground;
+  const color = isRecording ? "#EA4335" : colors.mutedForeground;
 
   return (
-    <Pressable
-      onPress={handlePress}
-      disabled={disabled || isTranscribing}
-      style={styles.wrapper}
-    >
-      {isTranscribing ? (
-        <ActivityIndicator size="small" color={colors.primary} />
-      ) : (
-        <Animated.View style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}>
-          {isRecording && (
-            <View style={[styles.recordingRing, { borderColor: "#EA4335" }]} />
-          )}
-          <Feather name="mic" size={20} color={color} />
-        </Animated.View>
-      )}
+    <Pressable onPress={handlePress} disabled={disabled} style={styles.wrapper}>
+      <Animated.View style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}>
+        {isRecording && (
+          <View style={[styles.recordingRing, { borderColor: "#EA4335" }]} />
+        )}
+        <Feather name="mic" size={20} color={color} />
+      </Animated.View>
     </Pressable>
   );
 }
