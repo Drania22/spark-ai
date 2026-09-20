@@ -35,7 +35,22 @@ app.use(
 
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-app.use(cors({ credentials: true, origin: true }));
+// Solo se aceptan orígenes propios. Las apps nativas no envían Origin, así que
+// solo afecta al navegador. Configura ALLOWED_ORIGINS con URLs completas
+// separadas por comas (p. ej. "https://mi-dominio.com,https://www.mi-dominio.com").
+const allowedOrigins = new Set([
+  ...(process.env.ALLOWED_ORIGINS ?? "").split(","),
+  ...[process.env.REPLIT_DEV_DOMAIN, ...(process.env.REPLIT_DOMAINS ?? "").split(",")]
+    .filter(Boolean)
+    .map((d) => `https://${d!.trim()}`),
+].map((o) => o.trim().replace(/\/$/, "")).filter(Boolean));
+
+app.use(
+  cors({
+    credentials: true,
+    origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)),
+  }),
+);
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true }));
 
