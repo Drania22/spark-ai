@@ -262,6 +262,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ message: text, history, model: selectedModel, images: imageData }),
         });
 
+        if (response.status === 429) throw new Error("rate_limited");
         if (!response.ok || !response.body) throw new Error("Stream failed");
 
         const reader = response.body.getReader();
@@ -309,9 +310,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-      } catch {
+      } catch (err) {
         const errMsg =
-          "Lo siento, hubo un error al conectar. Por favor, verifica tu conexión e intenta de nuevo.";
+          err instanceof Error && err.message === "rate_limited"
+            ? "Has alcanzado el límite de mensajes por hora. Intenta de nuevo más tarde."
+            : "Lo siento, hubo un error al conectar. Por favor, verifica tu conexión e intenta de nuevo.";
         streamingContentRef.current = errMsg;
         setConversations((prev) =>
           prev.map((c) => {

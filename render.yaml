@@ -1,0 +1,31 @@
+# Backend de Spark AI en Render (Blueprint).
+# Las claves NO van aquí: se piden en el panel de Render (sync: false).
+services:
+  - type: web
+    name: spark-ai-api
+    runtime: node
+    plan: free
+    buildCommand: >-
+      corepack enable &&
+      corepack prepare pnpm@11.1.2 --activate &&
+      pnpm install --no-frozen-lockfile &&
+      pnpm --filter @workspace/api-server run build
+    startCommand: pnpm --filter @workspace/api-server run start
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      # URL de la app web, con https:// y sin barra final (ej. https://mi-app.netlify.app)
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Tope de mensajes por usuario y hora
+      - key: CHAT_RATE_LIMIT_PER_HOUR
+        value: "30"

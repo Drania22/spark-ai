@@ -1,12 +1,17 @@
 import { Router } from "express";
-import { getAuth } from "@clerk/express";
 import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { envInt, rateLimitByUser } from "../lib/rateLimit";
 
 const router = Router();
+
+const transcribeLimiter = rateLimitByUser({
+  max: envInt("TRANSCRIBE_RATE_LIMIT_PER_HOUR", 20),
+  windowMs: 60 * 60 * 1000,
+});
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const AUDIO_TYPES = ["audio/m4a", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/mpeg", "audio/wav", "audio/webm", "audio/ogg"];
@@ -21,13 +26,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 // usuarios no autenticados.
 router.post(
   "/",
-  (req, res, next) => {
-    if (!getAuth(req).userId) {
-      res.status(401).json({ error: "No autenticado" });
-      return;
-    }
-    next();
-  },
+  transcribeLimiter,
   (req, res, next) => {
     upload.single("audio")(req, res, (err) => {
       if (err) {

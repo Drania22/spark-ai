@@ -1,8 +1,15 @@
 import { Router } from "express";
 import { getAuth } from "@clerk/express";
 import { GoogleGenAI } from "@google/genai";
+import { envInt, rateLimitByUser } from "../lib/rateLimit";
 
 const router = Router();
+
+// Mensajes por usuario y hora (configurable con CHAT_RATE_LIMIT_PER_HOUR).
+const chatLimiter = rateLimitByUser({
+  max: envInt("CHAT_RATE_LIMIT_PER_HOUR", 30),
+  windowMs: 60 * 60 * 1000,
+});
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
@@ -29,7 +36,7 @@ function parseImage(data: string) {
   return { mimeType, data: match[2] };
 }
 
-router.post("/stream", async (req, res) => {
+router.post("/stream", chatLimiter, async (req, res) => {
   if (!getAuth(req).userId) {
     res.status(401).json({ error: "No autenticado" });
     return;
