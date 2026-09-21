@@ -12,6 +12,10 @@ Backend en **Render** y app web en **Netlify**. Las claves se escriben solo en l
 
 ## 2. Backend en Render
 1. Render > **New > Blueprint**, elige el repositorio y la rama. Lee `render.yaml`.
+   Si el Blueprint falla sin dar motivo, crea el servicio a mano con **New > Web Service** y estos valores:
+   - Build Command: `npx --yes pnpm@11.1.2 install --no-frozen-lockfile && npx --yes pnpm@11.1.2 --filter @workspace/api-server run build`
+   - Start Command: `cd artifacts/api-server && node --enable-source-maps ./dist/index.mjs`
+   - Instance Type: Free. Variables: `NODE_VERSION=24`, `NODE_ENV=production`, `CHAT_RATE_LIMIT_PER_HOUR=30` y las tres claves.
 2. Cuando pida las variables, rellena `GEMINI_API_KEY`, `CLERK_PUBLISHABLE_KEY` y `CLERK_SECRET_KEY`. Deja `ALLOWED_ORIGINS` vacío por ahora.
 3. Al terminar, anota la dirección (ej. `spark-ai-api.onrender.com`) y comprueba `https://<dirección>/api/healthz`.
 
