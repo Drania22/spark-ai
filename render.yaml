@@ -6,10 +6,12 @@ services:
     runtime: node
     plan: free
     # npx pnpm@... evita `corepack enable`, que falla en Render (/usr/bin es de solo lectura).
+    # --ignore-scripts: pnpm 11 devuelve ERR_PNPM_IGNORED_BUILDS si hay scripts de
+    # dependencias sin aprobar; ninguno es necesario para compilar.
     buildCommand: >-
-      npx --yes pnpm@11.1.2 install --no-frozen-lockfile &&
+      npx --yes pnpm@11.1.2 install --no-frozen-lockfile --ignore-scripts &&
       npx --yes pnpm@11.1.2 --filter @workspace/api-server run build
-    startCommand: cd artifacts/api-server && node --enable-source-maps ./dist/index.mjs
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
     healthCheckPath: /api/healthz
     envVars:
       - key: NODE_VERSION
