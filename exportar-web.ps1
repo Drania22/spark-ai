@@ -21,7 +21,8 @@ $env:EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY = $ClavePublica
 Push-Location $app
 try {
   if (Test-Path $salida) { Remove-Item $salida -Recurse -Force }
-  pnpm exec expo export --platform web --output-dir dist
+  # --clear: Expo cachea los valores EXPO_PUBLIC_*; sin esto puede reutilizar una clave o dominio antiguos.
+  pnpm exec expo export --platform web --output-dir dist --clear
   if ($LASTEXITCODE -ne 0) { throw "expo export fallo (codigo $LASTEXITCODE)" }
 } finally { Pop-Location }
 
