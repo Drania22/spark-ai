@@ -34,7 +34,7 @@ Set-Content -Path (Join-Path $salida "_redirects") -Value "/* /index.html 200" -
 #    al subirlos, así que la copia va en una ruta corta.
 #  - Netlify (subida manual) ignora las carpetas que empiezan con punto y las llamadas
 #    node_modules, y Expo guarda las fuentes de íconos e imágenes en
-#    assets\__node_modules\.pnpm\<paquete>\node_modules\... Se copian a assets\vendor\<paquete>\nm\...
+#    assets\__node_modules\.pnpm\<paquete>\node_modules\... Se copian a assets\vendor\vN
 #    y se corrigen las referencias del código; si no, los íconos salen como cuadros con una x.
 $copia = "C:\spark-dist"
 # Se vacía el destino primero (robocopy no borra en él las carpetas que se excluyen del origen).
@@ -46,24 +46,34 @@ if ($LASTEXITCODE -ge 8) { throw "No se pudo copiar a $copia (robocopy codigo $L
 
 $origenPnpm = Join-Path $salida "assets\__node_modules\.pnpm"
 if (Test-Path -LiteralPath $origenPnpm) {
-  $destinoVendor = Join-Path $copia "assets\vendor"
-  Get-ChildItem -LiteralPath $origenPnpm -Recurse -File | ForEach-Object {
-    $rel = $_.FullName.Substring($origenPnpm.Length + 1)
-    $rel = (($rel -split '\\') | ForEach-Object { if ($_ -eq 'node_modules') { 'nm' } else { $_ } }) -join '\'
-    $dest = Join-Path $destinoVendor $rel
-    New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
-    Copy-Item -LiteralPath $_.FullName -Destination $dest
+  # Además, Netlify rechaza rutas muy largas (fallan a partir de ~180 caracteres), así que
+  # cada carpeta de origen se sustituye por un nombre corto: /assets/vendor/v1, v2, ...
+  $mapa = @{}   # ruta original (URL) -> ruta corta (URL)
+  $n = 0
+  foreach ($f in Get-ChildItem -LiteralPath $origenPnpm -Recurse -File) {
+    $relDir = (Split-Path $f.FullName.Substring($origenPnpm.Length + 1) -Parent).Replace('\', '/')
+    $urlOriginal = "/assets/__node_modules/.pnpm/$relDir"
+    if (-not $mapa.ContainsKey($urlOriginal)) { $n++; $mapa[$urlOriginal] = "/assets/vendor/v$n" }
+    $destDir = Join-Path $copia ($mapa[$urlOriginal].TrimStart('/').Replace('/', '\'))
+    New-Item -ItemType Directory -Force $destDir | Out-Null
+    Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $destDir $f.Name)
   }
-  # Referencias del código: /assets/__node_modules/.pnpm/<paquete>/node_modules/... -> /assets/vendor/<paquete>/nm/...
-  $patron = '/assets/__node_modules/\.pnpm/[^"''\s]*'
+  # Referencias del código: cada archivo aparece como una cadena entre comillas con su ruta
+  # completa (carpeta + nombre). Se sustituye la carpeta y se conserva el nombre.
+  $claves = @($mapa.Keys | Sort-Object Length -Descending)
   Get-ChildItem $copia -Recurse -File -Include *.js, *.html, *.json | ForEach-Object {
     $texto = [IO.File]::ReadAllText($_.FullName)
-    if ($texto.Contains("__node_modules/.pnpm/")) {
-      $nuevo = [regex]::Replace($texto, $patron, {
+    if ($texto.Contains("__node_modules")) {
+      $texto = [regex]::Replace($texto, '"(/assets/__node_modules/\.pnpm/[^"]*)"', {
         param($m)
-        $m.Value.Replace('/assets/__node_modules/.pnpm/', '/assets/vendor/').Replace('/node_modules/', '/nm/')
+        $s = $m.Groups[1].Value
+        foreach ($k in $claves) {
+          if ($s.StartsWith($k + '/')) { return '"' + $mapa[$k] + $s.Substring($k.Length) + '"' }
+        }
+        return $m.Value
       })
-      [IO.File]::WriteAllText($_.FullName, $nuevo)
+      if ($texto.Contains("__node_modules")) { Write-Warning "Quedan referencias a __node_modules en $($_.Name)" }
+      [IO.File]::WriteAllText($_.FullName, $texto)
     }
   }
 }
