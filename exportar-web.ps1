@@ -32,25 +32,38 @@ Set-Content -Path (Join-Path $salida "_redirects") -Value "/* /index.html 200" -
 # Se prepara la copia que se sube a Netlify, sin modificar "dist":
 #  - Windows no puede leer archivos con rutas de más de 260 caracteres y el navegador falla
 #    al subirlos, así que la copia va en una ruta corta.
-#  - Netlify (subida manual) ignora las carpetas que empiezan con punto, y Expo guarda las
-#    fuentes de íconos e imágenes en assets\__node_modules\.pnpm. Se copia como "pnpm" y se
-#    corrigen las referencias del código; si no, los íconos salen como cuadros con una x.
+#  - Netlify (subida manual) ignora las carpetas que empiezan con punto y las llamadas
+#    node_modules, y Expo guarda las fuentes de íconos e imágenes en
+#    assets\__node_modules\.pnpm\<paquete>\node_modules\... Se copian a assets\vendor\<paquete>\nm\...
+#    y se corrigen las referencias del código; si no, los íconos salen como cuadros con una x.
 $copia = "C:\spark-dist"
 # Se vacía el destino primero (robocopy no borra en él las carpetas que se excluyen del origen).
 $vacio = Join-Path $env:TEMP "spark-vacio"
 New-Item -ItemType Directory -Force $vacio | Out-Null
 robocopy $vacio $copia /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
-robocopy $salida $copia /MIR /XD ".pnpm" /NFL /NDL /NJH /NJS /NP | Out-Null
+robocopy $salida $copia /MIR /XD "__node_modules" /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "No se pudo copiar a $copia (robocopy codigo $LASTEXITCODE)" }
 
 $origenPnpm = Join-Path $salida "assets\__node_modules\.pnpm"
 if (Test-Path -LiteralPath $origenPnpm) {
-  robocopy $origenPnpm (Join-Path $copia "assets\__node_modules\pnpm") /E /NFL /NDL /NJH /NJS /NP | Out-Null
-  if ($LASTEXITCODE -ge 8) { throw "No se pudieron copiar los recursos (robocopy codigo $LASTEXITCODE)" }
+  $destinoVendor = Join-Path $copia "assets\vendor"
+  Get-ChildItem -LiteralPath $origenPnpm -Recurse -File | ForEach-Object {
+    $rel = $_.FullName.Substring($origenPnpm.Length + 1)
+    $rel = (($rel -split '\\') | ForEach-Object { if ($_ -eq 'node_modules') { 'nm' } else { $_ } }) -join '\'
+    $dest = Join-Path $destinoVendor $rel
+    New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
+    Copy-Item -LiteralPath $_.FullName -Destination $dest
+  }
+  # Referencias del código: /assets/__node_modules/.pnpm/<paquete>/node_modules/... -> /assets/vendor/<paquete>/nm/...
+  $patron = '/assets/__node_modules/\.pnpm/[^"''\s]*'
   Get-ChildItem $copia -Recurse -File -Include *.js, *.html, *.json | ForEach-Object {
     $texto = [IO.File]::ReadAllText($_.FullName)
     if ($texto.Contains("__node_modules/.pnpm/")) {
-      [IO.File]::WriteAllText($_.FullName, $texto.Replace("__node_modules/.pnpm/", "__node_modules/pnpm/"))
+      $nuevo = [regex]::Replace($texto, $patron, {
+        param($m)
+        $m.Value.Replace('/assets/__node_modules/.pnpm/', '/assets/vendor/').Replace('/node_modules/', '/nm/')
+      })
+      [IO.File]::WriteAllText($_.FullName, $nuevo)
     }
   }
 }
