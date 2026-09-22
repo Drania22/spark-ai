@@ -1,0 +1,16 @@
+# App web de Spark AI en Netlify.
+# Variables a definir en el panel de Netlify (Site configuration > Environment variables):
+#   EXPO_PUBLIC_DOMAIN                  dirección del backend, sin https:// (ej. spark-ai-api.onrender.com)
+#   EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY   clave pública de Clerk (pk_test_... o pk_live_...)
+[build]
+  command = "npx --yes pnpm@11.1.2 install --no-frozen-lockfile --ignore-scripts && npx --yes pnpm@11.1.2 --filter @workspace/spark-ai exec expo export --platform web"
+  publish = "artifacts/spark-ai/dist"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# La app es de una sola página: cualquier ruta debe servir index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

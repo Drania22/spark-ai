@@ -1,0 +1,32 @@
+# Backend de Spark AI en Render (Blueprint).
+# Las claves NO van aquí: se piden en el panel de Render (sync: false).
+services:
+  - type: web
+    name: spark-ai-api
+    runtime: node
+    plan: free
+    # npx pnpm@... evita `corepack enable`, que falla en Render (/usr/bin es de solo lectura).
+    # --ignore-scripts: pnpm 11 devuelve ERR_PNPM_IGNORED_BUILDS si hay scripts de
+    # dependencias sin aprobar; ninguno es necesario para compilar.
+    buildCommand: >-
+      npx --yes pnpm@11.1.2 install --no-frozen-lockfile --ignore-scripts &&
+      npx --yes pnpm@11.1.2 --filter @workspace/api-server run build
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      # URL de la app web, con https:// y sin barra final (ej. https://mi-app.netlify.app)
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Tope de mensajes por usuario y hora
+      - key: CHAT_RATE_LIMIT_PER_HOUR
+        value: "30"

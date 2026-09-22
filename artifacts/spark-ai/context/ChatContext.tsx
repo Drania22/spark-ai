@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { fetch } from "expo/fetch";
+import { useAuth } from "@clerk/expo";
 import { getOfflineResponse } from "@/utils/offlineAI";
 
 export type MessageRole = "user" | "assistant";
@@ -82,6 +83,7 @@ interface ChatContextType {
 const ChatContext = createContext<ChatContextType | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
+  const { getToken } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -250,52 +252,69 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           );
         }
 
+        const token = await getToken();
         const response = await fetch(`${API_BASE}/chat/stream`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ message: text, history, model: selectedModel, images: imageData }),
         });
 
+        if (response.status === 429) throw new Error("rate_limited");
         if (!response.ok || !response.body) throw new Error("Stream failed");
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        // Una línea "data: ..." puede llegar partida entre dos bloques: se
+        // conserva el resto sin terminar hasta el siguiente bloque.
+        let buffer = "";
+        let finished = false;
 
-        while (true) {
+        while (!finished) {
           const { done, value } = await reader.read();
           if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
           for (const line of lines) {
             if (line.startsWith("data: ")) {
-              const data = line.slice(6);
-              if (data === "[DONE]") break;
+              const data = line.slice(6).trim();
+              if (data === "[DONE]") {
+                finished = true;
+                break;
+              }
+              let parsed: { content?: string; error?: string } | null = null;
               try {
-                const parsed = JSON.parse(data);
-                if (parsed.content) {
-                  streamingContentRef.current += parsed.content;
-                  const captured = streamingContentRef.current;
-                  setConversations((prev) =>
-                    prev.map((c) => {
-                      if (c.id !== convId) return c;
-                      return {
-                        ...c,
-                        messages: c.messages.map((m) =>
-                          m.id === assistantMsg.id
-                            ? { ...m, content: captured }
-                            : m
-                        ),
-                      };
-                    })
-                  );
-                }
+                parsed = JSON.parse(data);
               } catch {}
+              if (parsed?.error) throw new Error(parsed.error);
+              if (parsed?.content) {
+                streamingContentRef.current += parsed.content;
+                const captured = streamingContentRef.current;
+                setConversations((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== convId) return c;
+                    return {
+                      ...c,
+                      messages: c.messages.map((m) =>
+                        m.id === assistantMsg.id
+                          ? { ...m, content: captured }
+                          : m
+                      ),
+                    };
+                  })
+                );
+              }
             }
           }
         }
-      } catch {
+      } catch (err) {
         const errMsg =
-          "Lo siento, hubo un error al conectar. Por favor, verifica tu conexión e intenta de nuevo.";
+          err instanceof Error && err.message === "rate_limited"
+            ? "Has alcanzado el límite de mensajes por hora. Intenta de nuevo más tarde."
+            : "Lo siento, hubo un error al conectar. Por favor, verifica tu conexión e intenta de nuevo.";
         streamingContentRef.current = errMsg;
         setConversations((prev) =>
           prev.map((c) => {
@@ -335,7 +354,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [activeConversationId, conversations, selectedModel, saveConversations]
+    [activeConversationId, conversations, selectedModel, saveConversations, getToken]
   );
 
   return (

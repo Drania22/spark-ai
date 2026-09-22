@@ -2,54 +2,78 @@ import { Router } from "express";
 import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { envInt, rateLimitByUser } from "../lib/rateLimit";
 
 const router = Router();
-const upload = multer({ dest: "/tmp/spark-audio/" });
+
+const transcribeLimiter = rateLimitByUser({
+  max: envInt("TRANSCRIBE_RATE_LIMIT_PER_HOUR", 20),
+  windowMs: 60 * 60 * 1000,
+});
+
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+const AUDIO_TYPES = ["audio/m4a", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/mpeg", "audio/wav", "audio/webm", "audio/ogg"];
+
+const upload = multer({
+  dest: path.join(os.tmpdir(), "spark-audio"),
+  limits: { fileSize: MAX_AUDIO_BYTES, files: 1 },
+});
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
-router.post("/", upload.single("audio"), async (req, res) => {
-  const file = req.file;
-  if (!file) {
-    res.status(400).json({ error: "No audio file provided" });
-    return;
-  }
-
-  try {
-    // Read the audio file as base64
-    const audioData = fs.readFileSync(file.path).toString("base64");
-    const mimeType = (file.mimetype as "audio/m4a") || "audio/m4a";
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                mimeType,
-                data: audioData,
-              },
-            },
-            {
-              text: "Transcribe the audio exactly as spoken. Return ONLY the transcribed text, nothing else. If the audio is in Spanish, return it in Spanish.",
-            },
-          ],
-        },
-      ],
+// La autenticación va antes de multer para no escribir a disco archivos de
+// usuarios no autenticados.
+router.post(
+  "/",
+  transcribeLimiter,
+  (req, res, next) => {
+    upload.single("audio")(req, res, (err) => {
+      if (err) {
+        res.status(err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({ error: "audio inválido" });
+        return;
+      }
+      next();
     });
+  },
+  async (req, res) => {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "No audio file provided" });
+      return;
+    }
 
-    const text = response.text ?? "";
-    res.json({ text });
-  } catch (err: any) {
-    req.log.error({ err }, "Transcription error");
-    res.status(500).json({ error: "Transcription failed" });
-  } finally {
-    // Clean up temp file
-    if (file?.path) {
+    try {
+      if (!AUDIO_TYPES.includes(file.mimetype)) {
+        res.status(400).json({ error: "tipo de audio no soportado" });
+        return;
+      }
+
+      const audioData = (await fs.promises.readFile(file.path)).toString("base64");
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: file.mimetype, data: audioData } },
+              {
+                text: "Transcribe the audio exactly as spoken. Return ONLY the transcribed text, nothing else. If the audio is in Spanish, return it in Spanish.",
+              },
+            ],
+          },
+        ],
+      });
+
+      res.json({ text: response.text ?? "" });
+    } catch (err: any) {
+      req.log.error({ err }, "Transcription error");
+      res.status(500).json({ error: "Transcription failed" });
+    } finally {
       fs.unlink(file.path, () => {});
     }
-  }
-});
+  },
+);
 
 export default router;
