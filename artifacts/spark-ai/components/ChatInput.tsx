@@ -76,7 +76,9 @@ export function ChatInput({
         {
           backgroundColor: colors.background,
           borderTopColor: images.length > 0 ? "transparent" : colors.border,
-          paddingBottom: insets.bottom + 8,
+          // En la web publicada en Netlify, su insignia fija ("Desarrollado por Netlify")
+          // ocupa la esquina inferior derecha y taparía el botón de enviar.
+          paddingBottom: insets.bottom + (Platform.OS === "web" ? 72 : 8),
         },
       ]}
     >
