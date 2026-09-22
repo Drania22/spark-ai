@@ -29,7 +29,33 @@ try {
 # La app es de una sola página: cualquier ruta debe servir index.html.
 Set-Content -Path (Join-Path $salida "_redirects") -Value "/* /index.html 200" -Encoding ascii
 
+# Se prepara la copia que se sube a Netlify, sin modificar "dist":
+#  - Windows no puede leer archivos con rutas de más de 260 caracteres y el navegador falla
+#    al subirlos, así que la copia va en una ruta corta.
+#  - Netlify (subida manual) ignora las carpetas que empiezan con punto, y Expo guarda las
+#    fuentes de íconos e imágenes en assets\__node_modules\.pnpm. Se copia como "pnpm" y se
+#    corrigen las referencias del código; si no, los íconos salen como cuadros con una x.
+$copia = "C:\spark-dist"
+# Se vacía el destino primero (robocopy no borra en él las carpetas que se excluyen del origen).
+$vacio = Join-Path $env:TEMP "spark-vacio"
+New-Item -ItemType Directory -Force $vacio | Out-Null
+robocopy $vacio $copia /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+robocopy $salida $copia /MIR /XD ".pnpm" /NFL /NDL /NJH /NJS /NP | Out-Null
+if ($LASTEXITCODE -ge 8) { throw "No se pudo copiar a $copia (robocopy codigo $LASTEXITCODE)" }
+
+$origenPnpm = Join-Path $salida "assets\__node_modules\.pnpm"
+if (Test-Path -LiteralPath $origenPnpm) {
+  robocopy $origenPnpm (Join-Path $copia "assets\__node_modules\pnpm") /E /NFL /NDL /NJH /NJS /NP | Out-Null
+  if ($LASTEXITCODE -ge 8) { throw "No se pudieron copiar los recursos (robocopy codigo $LASTEXITCODE)" }
+  Get-ChildItem $copia -Recurse -File -Include *.js, *.html, *.json | ForEach-Object {
+    $texto = [IO.File]::ReadAllText($_.FullName)
+    if ($texto.Contains("__node_modules/.pnpm/")) {
+      [IO.File]::WriteAllText($_.FullName, $texto.Replace("__node_modules/.pnpm/", "__node_modules/pnpm/"))
+    }
+  }
+}
+
 Write-Host ""
-Write-Host "Listo. Sube esta carpeta a Netlify (Deploy manually):"
-Write-Host $salida
-Start-Process explorer.exe $salida
+Write-Host "Listo. Sube esta carpeta a Netlify (Deploys > arrastrar y soltar):"
+Write-Host $copia
+Start-Process explorer.exe $copia
